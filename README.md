@@ -1,40 +1,27 @@
-# go-template
+# go-reflectx
 
-A template repository for Go projects. Requires macOS or Linux.
+Utilities for working with Go's `reflect` package.
 
-## Setup
-
-After creating a new repository from this template, run:
+## Installation
 
 ```sh
-./setup.sh
+go get github.com/pasataleo/go-reflectx
 ```
 
-This will:
+## Features
 
-- Update the Go module path to match your repository name
-- Configure the project as an executable or library
-- Install a git pre-commit hook that runs `make all`
-- Set up the release workflow for the chosen project type
-- Delete itself
+### Walk
 
-## Make targets
+Recursively traverse a struct's exported fields with a callback. Handles pointer chains, auto-initializes nil pointers, detects self-referential types, and visits children before parents so nested structs are already populated when the parent callback fires.
 
-- `make all` — run tidy, generate, fmt, lint, test, and build
-- `make tidy` — run `go mod tidy`
-- `make generate` — run `go generate ./...`
-- `make fmt` — run `go fmt ./...`
-- `make lint` — install and run golangci-lint
-- `make test` — run `go test ./...`
-- `make build` — build the binary (or verify compilation for libraries); local builds report version `dev`
+### Path
 
-## Releasing
+A `[]string` type representing a field's location in a struct hierarchy (e.g. `Database.Host`), with `Append` and dot-separated `String()`.
 
-Update `CHANGELOG.md` with the changes for the release, then tag the commit:
+### SetString
 
-```sh
-git tag v0.1.0
-git push origin v0.1.0
-```
+Populate a `reflect.Value` from a string. Supports a `StringSettable` interface for custom parsing, plus built-in handling for all primitive types (string, bool, int/uint/float/complex variants). Includes `CanSetString` to check support and an `EmptyStringIsTrue` option for flag-style booleans.
 
-The release workflow will create a GitHub release using the contents of `CHANGELOG.md` and clear it ready for the next release.
+### Unpack / UnpackType
+
+Strip pointer and interface wrappers from `reflect.Value` and `reflect.Type`, initializing nil pointers along the way.
