@@ -14,6 +14,8 @@ go get github.com/pasataleo/go-reflectx
 
 Recursively traverse a struct's exported fields with a callback. Handles pointer chains, auto-initializes nil pointers, detects self-referential types, and visits children before parents so nested structs are already populated when the parent callback fires.
 
+`Walker` is the same traversal with a callback for each direction of travel: `Enter` fires on a struct field before its children, and returns a `leave` that fires once the children and the field's own `Visit` are done. The pairing is guaranteed — `leave` runs on every path out, including the ones that skip `Visit` — so a caller can bracket state around a subtree without reconciling paths. `Walk(v, cb)` is `Walker{Visit: cb}.Walk(v)`.
+
 ### Path
 
 A `[]string` type representing a field's location in a struct hierarchy (e.g. `Database.Host`), with `Append` and dot-separated `String()`.
