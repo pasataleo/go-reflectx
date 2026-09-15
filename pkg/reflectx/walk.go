@@ -9,90 +9,97 @@ import (
 // WalkFunc is the callback type for Walk. It is called for every exported field
 // in the struct, including fields that are themselves structs. The Path argument
 // identifies the field's location within the struct hierarchy, the reflect.Value
-// is the field's value, and the reflect.StructField contains the field's metadata.
-type WalkFunc func(Path, reflect.Value, reflect.StructField) error
+// is the field's value, and the reflect.StructField contains the field's
+// metadata. The final argument is the field's data: whatever the Walker's Enter
+// returned for this field, or the data handed to Walk if there is no Enter.
+type WalkFunc func(Path, reflect.Value, reflect.StructField, interface{}) error
 
-// EnterFunc is called on the way down. The leave it returns, if non-nil, is
-// called once the field's children have been walked and its WalkFunc has run -
-// on every path out, including the ones that skip the WalkFunc: when a child
-// errors, when Enter itself errors, and when any of them panics.
-type EnterFunc func(Path, reflect.Value, reflect.StructField) (leave func(), err error)
+// EnterFunc is called on the way down, before a field's children are walked.
+// The data it returns is scoped to that field: the children below the field
+// receive it, and so does the field's own WalkFunc, while the field's siblings
+// receive the data their shared parent produced. Returning the data unchanged
+// passes the parent's data through untouched.
+type EnterFunc func(Path, reflect.Value, reflect.StructField, interface{}) (data interface{}, err error)
 
 // Walker traverses a struct with a callback for each direction of travel. The
 // zero Walker does nothing.
 //
-// The ordering contract is enter -> children -> visit -> leave, and the pairing
-// of an Enter with its leave is guaranteed. That guarantee is the point: a
-// caller keeping state that must bracket a subtree opens it in Enter and closes
-// it in leave, without having to compare paths or reason about which way the
-// walk left the field.
+// The ordering contract is enter -> children -> visit. Data flows down: each
+// Enter derives its field's data from the data of the field above it, and each
+// Visit receives the data its own Enter returned.
 type Walker struct {
-	// Enter is called on a struct-typed field before its children are walked,
-	// after any nil pointer has been initialized. It is not called for fields
-	// Walk does not recurse into: non-structs, and types already being walked
-	// further up the current path. Optional.
+	// Enter is called on every exported field before Walk recurses into it,
+	// including the fields Walk does not recurse into: non-structs, and struct
+	// types already being walked further up the current path. It receives the
+	// field itself, as Visit does, with any nil pointer Walk is going to recurse
+	// into already initialized. An error from Enter skips both the field's
+	// children and its Visit. Optional.
 	Enter EnterFunc
 
 	// Visit is called on every exported field after its children have been
-	// walked. This is the callback Walk takes. Optional.
+	// walked, with the data that field's own Enter returned. This is the
+	// callback Walk takes. Optional.
 	Visit WalkFunc
 }
 
-// Walk recursively traverses v, which must be a non-nil pointer to a struct,
-// and calls the callback for every exported field. For fields that are structs
-// (or pointers to structs), Walk recurses into the children first and then
-// calls the callback on the struct field itself. This means the struct's child
-// fields are already populated when the callback receives the parent, allowing
-// the callback to use those values for more complex processing. Nil pointers
-// to structs are initialized automatically. Errors from the callback are
-// aggregated and returned together.
+// Walk recursively traverses target, which must be a non-nil pointer to a
+// struct, and calls the callback for every exported field. For fields that are
+// structs (or pointers to structs), Walk recurses into the children first and
+// then calls the callback on the struct field itself. This means the struct's
+// child fields are already populated when the callback receives the parent,
+// allowing the callback to use those values for more complex processing. Nil
+// pointers to structs are initialized automatically. Errors from the callback
+// are aggregated and returned together.
+//
+// data is handed to every callback unchanged, since there is no Enter to derive
+// anything from it. A caller that wants per-field data, or a hook on the way
+// down, uses Walker directly.
 //
 // Self-referential struct hierarchies are detected and handled gracefully: if a
 // struct type is already being walked in the current path, its fields are not
 // recursed into but the callback is still called on the field itself.
-//
-// A caller that also needs a hook on the way down uses Walker directly.
-func Walk(v interface{}, callback WalkFunc) error {
-	return Walker{Visit: callback}.Walk(v)
+func Walk(target interface{}, data interface{}, callback WalkFunc) error {
+	return Walker{Visit: callback}.Walk(target, data)
 }
 
-// Walk traverses v, which must be a non-nil pointer to a struct, calling Enter
-// and Visit as described on Walker. It panics on anything that is not a
-// non-nil pointer to a struct.
-func (w Walker) Walk(v interface{}) error {
-	value := reflect.ValueOf(v)
+// Walk traverses target, which must be a non-nil pointer to a struct, calling
+// Enter and Visit as described on Walker. data is the data for the top-level
+// fields: the Enter of each receives it, and without an Enter it reaches every
+// Visit unchanged. It panics on anything that is not a non-nil pointer to a
+// struct.
+func (w Walker) Walk(target interface{}, data interface{}) error {
+	value := reflect.ValueOf(target)
 	if value.Kind() == reflect.Interface {
 		// automatically unpack interfaces
 		value = value.Elem()
 	}
 
 	if value.Kind() != reflect.Pointer {
-		panic("v must be a pointer to a struct")
+		panic("target must be a pointer to a struct")
 	}
 	if value.IsNil() {
-		panic("v must not be nil")
+		panic("target must not be nil")
 	}
 	value = value.Elem()
 
 	if value.Kind() != reflect.Struct {
-		panic("v must be a pointer to a struct")
+		panic("target must be a pointer to a struct")
 	}
 
-	seen := make(map[reflect.Type]bool)
-	return walk(value, nil, w, seen)
+	return walk(value, data, nil, w, make(map[reflect.Type]bool))
 }
 
-func walk(v reflect.Value, path Path, w Walker, seen map[reflect.Type]bool) error {
-	seen[v.Type()] = true
-	defer delete(seen, v.Type())
+func walk(value reflect.Value, data interface{}, path Path, w Walker, seen map[reflect.Type]bool) error {
+	seen[value.Type()] = true
+	defer delete(seen, value.Type())
 
 	var errs error
-	for i := 0; i < v.NumField(); i++ {
-		if !v.Field(i).CanSet() {
+	for i := 0; i < value.NumField(); i++ {
+		if !value.Field(i).CanSet() {
 			continue // skip unexported fields
 		}
 
-		if err := w.field(v, i, path.Append(v.Type().Field(i).Name), seen); err != nil {
+		if err := w.field(value, i, data, path.Append(value.Type().Field(i).Name), seen); err != nil {
 			errs = errorsx.Append(errs, err)
 			continue
 		}
@@ -102,32 +109,42 @@ func walk(v reflect.Value, path Path, w Walker, seen map[reflect.Type]bool) erro
 }
 
 // field walks one field of v. It is a function of its own rather than the body
-// of the loop above so that the leave Enter returns can be deferred: it then
-// runs at the end of this field rather than at the end of the whole struct, and
-// runs on the paths out that skip Visit as well as on the one that does not.
-func (w Walker) field(v reflect.Value, i int, path Path, seen map[reflect.Type]bool) error {
+// of the loop above so that the data Enter returns can shadow the parameter for
+// the duration of this field alone: the children below it and its own Visit see
+// that data, while the fields after it in the loop still see the parent's.
+func (w Walker) field(v reflect.Value, i int, data interface{}, path Path, seen map[reflect.Type]bool) error {
 	value, field := v.Field(i), v.Type().Field(i)
 
 	currentType := UnpackType(field.Type)
-	if currentType.Kind() == reflect.Struct && !seen[currentType] {
-		// Unpack before Enter, not after: it is what initializes a nil pointer,
-		// and Enter has no use for a field it cannot yet look inside.
-		current := Unpack(value)
+	recurse := currentType.Kind() == reflect.Struct && !seen[currentType]
 
-		if w.Enter != nil {
-			leave, err := w.Enter(path, value, field)
-			if leave != nil {
-				defer leave()
-			}
-			if err != nil {
-				return err
-			}
+	// Unpack initializes a nil pointer, which is what makes the field walkable
+	// at all. Only the fields recursed into are unpacked, so a nil pointer whose
+	// type is already on the current path stays nil.
+	//
+	// It runs before Enter for the side effect rather than the result: Enter and
+	// Visit are handed the same field, so they should agree about it, and
+	// without this Enter would see a nil pointer that the recursion had filled
+	// in by the time Visit saw it. The unpacked value itself stays out of the
+	// callbacks - it does not exist for the fields Walk does not recurse into,
+	// and Enter is called on those too.
+	var current reflect.Value
+	if recurse {
+		current = Unpack(value)
+	}
+
+	if w.Enter != nil {
+		var err error
+		if data, err = w.Enter(path, value, field, data); err != nil {
+			return err
 		}
+	}
 
-		if err := walk(current, path, w, seen); err != nil {
-			// A child error skips this field's Visit, as it always has: the
-			// field's children are not all populated, so a callback that was
-			// promised them cannot do its job.
+	if recurse {
+		if err := walk(current, data, path, w, seen); err != nil {
+			// A child error skips this field's Visit: the field's children are
+			// not all populated, so a callback that was promised them cannot do
+			// its job.
 			return err
 		}
 	}
@@ -135,7 +152,7 @@ func (w Walker) field(v reflect.Value, i int, path Path, seen map[reflect.Type]b
 	if w.Visit == nil {
 		return nil
 	}
-	return w.Visit(path, value, field)
+	return w.Visit(path, value, field, data)
 }
 
 // UnpackType strips all pointer wrappers from a reflect.Type, returning the
