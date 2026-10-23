@@ -159,7 +159,7 @@ func (w Walker) field(v reflect.Value, i int, data interface{}, path Path, seen 
 // underlying type. Interfaces are left as they are: a reflect.Type describing
 // an interface has no dynamic type behind it to unwrap.
 func UnpackType(t reflect.Type) reflect.Type {
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	return t
