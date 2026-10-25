@@ -149,8 +149,7 @@ func TestWalk(t *testing.T) {
 			}
 			return nil
 		})
-		err := Walk(&outer{}, nil, failInner)
-		testingx.Capture(t, err).HasError("fail")
+		testingx.Call(t, Walk, &outer{}, nil, failInner).HasError("fail")
 		// Inner.A errors, so walk skips the Inner parent callback, but still visits B
 		testingx.Capture(t, visited).Equal([]string{"Inner.A", "B"})
 	})
@@ -425,8 +424,7 @@ func TestWalker(t *testing.T) {
 			B     string
 		}
 		var tr trace
-		err := tr.walker("Inner.A").Walk(&outer{}, nil)
-		testingx.Capture(t, err).HasError("fail")
+		testingx.Call(t, tr.walker("Inner.A").Walk, &outer{}, nil).HasError("fail")
 		// Inner's own Visit is skipped, and the walk carries on with B.
 		testingx.Capture(t, tr.events).Equal([]string{
 			"enter Inner", "enter Inner.A", "visit Inner.A", "enter B", "visit B",
@@ -453,8 +451,7 @@ func TestWalker(t *testing.T) {
 				return nil
 			},
 		}
-		err := w.Walk(&outer{}, nil)
-		testingx.Capture(t, err).HasError("no entry")
+		testingx.Call(t, w.Walk, &outer{}, nil).HasError("no entry")
 		// No children and no Visit for Inner itself, but the walk carries on
 		// with the siblings.
 		testingx.Capture(t, events).Equal([]string{"enter Inner", "enter B", "visit B"})

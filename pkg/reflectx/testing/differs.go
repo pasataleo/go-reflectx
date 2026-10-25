@@ -1,4 +1,12 @@
-package reflectx
+// Package testing holds go-testingx differs and renderers for reflect.Type and
+// reflect.Value, for tests that compare values holding them. It is separate
+// from reflectx so that only tests import go-testingx; callers usually import
+// it under the name reflectx:
+//
+//	import reflectx "github.com/pasataleo/go-reflectx/pkg/reflectx/testing"
+//
+//	testingx.Capture(t, got).Equal(want, reflectx.WithTypeDiffer)
+package testing
 
 import (
 	"reflect"

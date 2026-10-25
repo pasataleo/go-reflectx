@@ -28,10 +28,12 @@ Functionality that will be removed in a future release.
 ## BREAKING CHANGES
 
 - `Walk` takes a `data` argument, and `WalkFunc` a fourth parameter for it.
+- The go-testingx differs and renderers moved from `reflectx` to `reflectx/testing`, so `reflectx` no longer imports go-testingx.
 
 ## UPGRADE NOTES
 
 - `Walk(&target, callback)` becomes `Walk(&target, nil, callback)`, and the callback gains a trailing `_ interface{}` parameter.
+- Import the differs from `github.com/pasataleo/go-reflectx/pkg/reflectx/testing`, aliased as `reflectx` in tests.
 
 # v0.1.0
 
