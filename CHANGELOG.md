@@ -2,13 +2,12 @@
 
 ## FEATURES
 
-- `Walker`, a walk with an `Enter` callback before a field's children and a `Visit` callback after them.
-- `Enter` can return data scoped to a field: its children and its `Visit` see it, its siblings do not.
-- `EnterFunc`, the type of `Walker.Enter`.
+- `Walker`, a walk with an `Enter` callback before a field's children and a `Visit` callback after them, where `Enter` can return data scoped to the field and its children.
 
+<!--
 ## IMPROVEMENTS
-
-- `Walk` is a thin wrapper over `Walker`, with unchanged behaviour.
+Enhancements to existing functionality.
+-->
 
 <!--
 ## BUG FIXES
